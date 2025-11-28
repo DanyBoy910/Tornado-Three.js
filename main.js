@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es'; 
+import { GUI } from 'dat.gui';
 import { MovementControls } from './scripts/controles_mov.js';
 import { Tornado } from './scripts/tornado.js';
 
@@ -91,10 +92,10 @@ physicsWorld.addBody(groundBody);
 // --- El Cubo que Cae ---
 
 // Cubo VISUAL
-const cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
+const cubeGeometry = new THREE.BoxGeometry(2,2, 2);
 const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
 const visualCube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-visualCube.position.set(14, 20, 0);
+visualCube.position.set(50, 20, 0);
 visualCube.castShadow = true;
 scene.add(visualCube);
 
@@ -119,6 +120,19 @@ const clock = new THREE.Clock();
 
 // --- Controles ---
 const controls = new MovementControls(camera, document.body);
+
+// --- GUI para controlar parámetros del tornado ---
+const gui = new GUI();
+
+// Carpeta para parámetros del tornado
+const tornadoFolder = gui.addFolder('Tornado');
+tornadoFolder.add(tornado, 'tornadoForceStrength', 10000, 500000, 10000).name('Fuerza');
+tornadoFolder.add(tornado, 'maxRadius', 10, 100, 5).name('Radio Máximo');
+tornadoFolder.add(tornado, 'maxHeight', 30, 200, 10).name('Altura Máxima');
+tornadoFolder.add(tornado.velocity, 'x', -50, 50, 1).name('Velocidad X');
+tornadoFolder.add(tornado.velocity, 'y', -30, 30, 1).name('Velocidad Y');
+tornadoFolder.add(tornado.velocity, 'z', -50, 50, 1).name('Velocidad Z');
+tornadoFolder.open();
 
 // --- Loop de Animación (Sin cambios) ---
 function animate() {

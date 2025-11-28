@@ -1,32 +1,19 @@
 import * as THREE from "three";
 
-const dummy = new THREE.Object3D();
-
 export class Tornado {
-  particleCount = 100000;
+  particleCount = 100000; // Podemos usar muchas más partículas ahora
   maxHeight = 90;
-  maxRadius = 50;
+  maxRadius = 30;
   coreRadius = 5.0;
   position = new THREE.Vector3(0, 0, 0); // Centro del tornado
+  velocity = new THREE.Vector3(0, 0, 0); // Movimiento constante en X (ajusta según necesites)
   tornadoForceStrength = 150000; // Fuerza del tornado (ajusta según necesites)
 
   constructor(scene) {
-    const geometry = new THREE.SphereGeometry(0.08, 6, 6);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x888888,
-      transparent: true,
-      opacity: 0.5,
-      depthWrite: false,
-    });
-
-    this.mesh = new THREE.InstancedMesh(geometry, material, this.particleCount);
+    // Crear geometría de puntos
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(this.particleCount * 3);
     
-    // --- OPTIMIZACIÓN ---
-    // ¡NO le pedimos al tornado que proyecte sombras!
-    // this.mesh.castShadow = true; // (Línea eliminada)
-
-    scene.add(this.mesh);
-
     this.particles = [];
 
     for (let i = 0; i < this.particleCount; i++) {
@@ -44,9 +31,6 @@ export class Tornado {
         radialPhase: Math.random() * Math.PI * 2,
         chaosInitial: Math.random() * 5,
         chaosFactor: 2.0,
-
-        // --- OPTIMIZACIÓN ---
-        // Pre-calculamos los factores aleatorios para el 'update'
         chaosXFactor: Math.random() - 0.5,
         chaosZFactor: Math.random() - 0.5,
         chaosYFactor: Math.random() - 0.5
@@ -65,14 +49,49 @@ export class Tornado {
       const x = radius * Math.cos(particle.angle) + initialChaosX;
       const z = radius * Math.sin(particle.angle) + initialChaosZ;
 
-      dummy.position.set(x, y, z);
-      dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, dummy.matrix);
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
     }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    // Material simple para puntos - mucho más eficiente
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.3,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false
+    });
+
+    this.mesh = new THREE.Points(geometry, material);
+    this.geometry = geometry;
+    
+    scene.add(this.mesh);
 
     this.time = 0;
     this.formationTime = 0; 
     this.formationDuration = 3; 
+  }
+
+  // Crear una textura de círculo suave
+  createCircleTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    // Dibuja un círculo suave (gradiente radial)
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    
+    return canvas;
   }
 
   calculateMaxRadius(height) {
@@ -91,8 +110,13 @@ export class Tornado {
     this.time += delta;
     this.formationTime += delta;
     
+    // Mover el tornado en su dirección de velocidad
+    this.position.addScaledVector(this.velocity, delta);
+    
     const formationProgress = Math.min(this.formationTime / this.formationDuration, 1);
-    const globalChaosFactor = 1 - formationProgress; 
+    const globalChaosFactor = 1 - formationProgress;
+
+    const positions = this.geometry.attributes.position.array;
 
     for (let i = 0; i < this.particleCount; i++) {
       const p = this.particles[i];
@@ -127,22 +151,21 @@ export class Tornado {
       const turbulenceZ =
         Math.cos(this.time * turbFreq * 1.3 + p.turbulenceOffset) * turbStrength;
 
-      // --- OPTIMIZACIÓN ---
-      // (CAMBIO 5: Usamos los factores pre-calculados)
+      // Usar factores pre-calculados
       const chaosStrength = 2.0 * p.chaosFactor; 
-      const chaosX = p.chaosXFactor * chaosStrength; // ¡No usamos Math.random()!
-      const chaosZ = p.chaosZFactor * chaosStrength; // ¡No usamos Math.random()!
-      const chaosY = p.chaosYFactor * chaosStrength * 0.5; // ¡No usamos Math.random()!
+      const chaosX = p.chaosXFactor * chaosStrength;
+      const chaosZ = p.chaosZFactor * chaosStrength;
+      const chaosY = p.chaosYFactor * chaosStrength * 0.5;
 
       // 6. Movimiento helicoidal
       const helixAmp = 0.5;
       const helixFreq = 10;
       const helixOffset = Math.sin(p.angle * helixFreq + p.phase) * helixAmp;
 
-      // 7. Posición final
-      const x = targetRadius * Math.cos(p.angle) + turbulenceX + chaosX;
-      const z = targetRadius * Math.sin(p.angle) + turbulenceZ + chaosZ;
-      const y = p.height + helixOffset + chaosY;
+      // 7. Posición final (relativa al centro del tornado)
+      const x = targetRadius * Math.cos(p.angle) + turbulenceX + chaosX + this.position.x;
+      const z = targetRadius * Math.sin(p.angle) + turbulenceZ + chaosZ + this.position.z;
+      const y = p.height + helixOffset + chaosY + this.position.y;
 
       // 8. Reiniciar
       if (p.height > this.maxHeight) {
@@ -152,13 +175,13 @@ export class Tornado {
         p.radialPhase = Math.random() * Math.PI * 2;
       }
 
-      // 9. Actualizar matriz
-      dummy.position.set(x, y, z);
-      dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, dummy.matrix);
+      // 9. Actualizar posición en el buffer
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
     }
 
-    this.mesh.instanceMatrix.needsUpdate = true;
+    this.geometry.attributes.position.needsUpdate = true;
   }
 
   // Calcula la fuerza que el tornado ejercería sobre un objeto en una posición dada
