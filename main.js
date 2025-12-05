@@ -3,6 +3,10 @@ import * as CANNON from 'cannon-es';
 import { GUI } from 'dat.gui';
 import { MovementControls } from './scripts/controles_mov.js';
 import { Tornado } from './scripts/tornado.js';
+import { ModelLoader } from './scripts/model_loader.js';
+import { PlacementSystem } from './scripts/placement_system.js';
+import { DestructibleSystem } from './scripts/destructible_system.js';
+import { BuildingSlots } from './scripts/building_slots.js';
 
 // --- Configuración Visual (Three.js) ---
 const scene = new THREE.Scene();
@@ -47,69 +51,7 @@ const physicsWorld = new CANNON.World({
     gravity: new CANNON.Vec3(0, -9.82, 0)
 });
 
-// ===============================================
-// === ¡NUEVO! - MATERIALES FÍSICOS ===
-// ===============================================
-// 1. Creamos los materiales
-const groundMaterial = new CANNON.Material('ground');
-const bouncyMaterial = new CANNON.Material('bouncy');
 
-// 2. Definimos la interacción entre ellos
-const contactMaterial = new CANNON.ContactMaterial(
-    groundMaterial,
-    bouncyMaterial,
-    {
-        friction: 0.1, // Fricción
-        restitution: 0.7 // ¡REBOTE! (0 = nada, 1 = rebote perfecto)
-    }
-);
-// 3. Añadimos la interacción al mundo
-physicsWorld.addContactMaterial(contactMaterial);
-
-
-// --- Físicas del Suelo ---
-const planeGeometry = new THREE.PlaneGeometry(100, 100);
-const planeMaterial = new THREE.MeshStandardMaterial({
-    color: 0xeeeeee,
-    side: THREE.DoubleSide
-});
-const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-plane.rotation.x = -Math.PI / 2;
-plane.position.y = -3; 
-plane.receiveShadow = true;
-scene.add(plane);
-
-// Cuerpo Físico del Suelo
-const groundBody = new CANNON.Body({
-    type: CANNON.Body.STATIC,
-    shape: new CANNON.Plane(),
-    material: groundMaterial // ¡NUEVO! Asignamos el material
-});
-groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); 
-groundBody.position.copy(plane.position);
-physicsWorld.addBody(groundBody);
-
-// --- El Cubo que Cae ---
-
-// Cubo VISUAL
-const cubeGeometry = new THREE.BoxGeometry(2,2, 2);
-const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-const visualCube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-visualCube.position.set(50, 20, 0);
-visualCube.castShadow = true;
-scene.add(visualCube);
-
-// Cubo FÍSICO
-const cubeBody = new CANNON.Body({
-    mass: 50,
-    shape: new CANNON.Box(new CANNON.Vec3(1, 1, 1)),
-    material: bouncyMaterial // ¡NUEVO! Asignamos el material
-});
-cubeBody.position.copy(visualCube.position);
-physicsWorld.addBody(cubeBody);
-// Ajustes para comportamiento más natural
-cubeBody.linearDamping = 0.02; // reduce el movimiento errático en el aire
-cubeBody.angularDamping = 0.7; // frena la rotación rápidamente cuando sale del tornado
 
 
 // --- Tornado ---
@@ -117,6 +59,11 @@ const tornado = new Tornado(scene);
 
 // --- Reloj ---
 const clock = new THREE.Clock();
+
+// --- Objeto para controlar la pausa de la animación ---
+const animationControl = {
+    isRunning: true
+};
 
 // --- Controles ---
 const controls = new MovementControls(camera, document.body);
@@ -126,55 +73,125 @@ const gui = new GUI();
 
 // Carpeta para parámetros del tornado
 const tornadoFolder = gui.addFolder('Tornado');
-tornadoFolder.add(tornado, 'tornadoForceStrength', 10000, 500000, 10000).name('Fuerza');
-tornadoFolder.add(tornado, 'maxRadius', 10, 100, 5).name('Radio Máximo');
-tornadoFolder.add(tornado, 'maxHeight', 30, 200, 10).name('Altura Máxima');
-tornadoFolder.add(tornado.velocity, 'x', -50, 50, 1).name('Velocidad X');
-tornadoFolder.add(tornado.velocity, 'y', -30, 30, 1).name('Velocidad Y');
-tornadoFolder.add(tornado.velocity, 'z', -50, 50, 1).name('Velocidad Z');
+tornadoFolder.add(tornado, 'tornadoForceStrength', 1000, 5000, 100).name('Fuerza');
+tornadoFolder.add(tornado, 'maxRadius', 10, 30, 5).name('Radio Máximo');
+tornadoFolder.add(tornado, 'maxHeight', 30, 50, 10).name('Altura Máxima');
+tornadoFolder.add(tornado, 'particleCount', 200, 10000, 100).name('Partículas').onChange((value) => {
+    tornado.setParticleCount(Math.floor(value));
+});
+tornadoFolder.add(tornado.velocity, 'x', -6, 6, 1).name('Velocidad X');
+tornadoFolder.add(tornado.velocity, 'z', -6, 6, 1).name('Velocidad Z');
 tornadoFolder.open();
 
-// --- Loop de Animación (Sin cambios) ---
+// Carpeta de controles de animación
+const animationFolder = gui.addFolder('Animación');
+animationFolder.add(animationControl, 'isRunning').name('Play/Pausa');
+animationFolder.open();
+
+// --- Cargar modelo 3D con física ---
+const modelLoader = new ModelLoader(scene, physicsWorld);
+
+// Cargar el modelo del suelo
+modelLoader.load('./assets/Suelo.glb', {
+    mass: 0, // 0 = estático (no se mueve)
+    position: [0, 0, 0],
+    scale: 1,
+    friction: 0.5,
+    restitution: 0.2,
+    onLoad: (modelData) => {
+        console.log('✓ Suelo cargado con física');
+    }
+}).catch(error => {
+    console.error('No se pudo cargar el suelo:', error);
+});
+
+// --- Sistema de Colocación de Objetos ---
+const placer = new PlacementSystem(scene, camera, renderer, modelLoader, physicsWorld);
+
+// Agregar assets disponibles
+placer.addAsset('Coche', './assets/coche_item.glb', { mass: 5 });
+placer.addAsset('Poste de Luz', './assets/poste_luz_item.glb', { mass: 2 });
+
+// --- Sistema de Destructibilidad ---
+const destructibles = new DestructibleSystem(modelLoader, physicsWorld);
+
+// Ejemplo: Agregar edificios destructibles en posiciones específicas
+// destructibles.addDestructible(
+//     'edificio_1',
+//     './assets/edificio_intacto.glb',
+//     './assets/edificio_roto.glb',
+//     [0, 5, 0]
+// );
+
+// Puedes agregar más edificios:
+// destructibles.addDestructible('edificio_2', '...', '...', [20, 5, 0]);
+
+// Puedes agregar más assets según necesites:
+// placer.addAsset('Arbol', './assets/arbol.glb');
+// placer.addAsset('Casa', './assets/casa.glb');
+
+// --- Sistema de Slots de Edificios ---
+const buildingSlots = new BuildingSlots(scene, camera, renderer, modelLoader, physicsWorld);
+
+// Conectar tornado al sistema de slots para aplicar fuerzas y daños
+buildingSlots.setTornado(tornado);
+
+// Registrar tipos de edificios disponibles
+buildingSlots.addBuilding('Casa', {
+    intact: './assets/casa_0.glb',
+    cracked: './assets/casa_0_cracked.glb'
+}, { debrisMass: 2
+ });
+
+buildingSlots.addBuilding('Edificio 1', {
+    intact: './assets/casa_1.glb',
+    cracked: './assets/casa_1_cracked.glb'
+}, { debrisMass: 2 });
+
+buildingSlots.addBuilding('Casa 2 pisos', {
+    intact: './assets/casa_2.glb',
+    cracked: './assets/casa_2_cracked.glb'
+}, { debrisMass: 2 });
+
+
+
+// Crear slots (posiciones donde puedes colocar edificios)
+// Slot de prueba en posiciónds [30, 0, 0]
+for (let i = 0; i < 5; i++) {
+    for (let j = 0; j < 4; j++) {
+        buildingSlots.addSlot(`slot_${i}_${j}`, [-34 + i * 17, 0.4, -37 + j * 10], { size: 1 });
+    }
+}
+
+// --- Loop de Animación ---
 function animate() {
     requestAnimationFrame(animate);
+    
     const delta = clock.getDelta();
-
+    
+    // Actualizar controles y tornado SIEMPRE (incluso en pausa)
+    controls.update(delta);
+    
+    // Si la animación está pausada, solo renderizar sin actualizar física
+    if (!animationControl.isRunning) {
+        renderer.render(scene, camera);
+        return;
+    }
+    
     // Actualizamos el mundo físico
     physicsWorld.step(1 / 60, delta);
 
-    // --- Aplicar fuerzas del tornado al cubo ---
-    const tornadoResult = tornado.calculateForceOnObject(
-        new THREE.Vector3().copy(cubeBody.position),
-        cubeBody.mass
-    );
+    // Actualizar posición de modelos cargados
+    modelLoader.updateModels();
 
-    // Separar la componente vertical (lift) y la horizontal (radial + tangencial)
-    const lift = new CANNON.Vec3(0, tornadoResult.force.y, 0);
-    const horizontal = new CANNON.Vec3(tornadoResult.force.x, 0, tornadoResult.force.z);
+    // --- Aplicar fuerzas del tornado a TODOS los modelos cargados ---
+    modelLoader.applyTornadoForces(tornado);
 
-    // Aplicar lift en el centro del cuerpo (no genera torque)
-    if (lift.y !== 0) {
-        cubeBody.applyForce(lift, cubeBody.position);
-    }
+    // --- Aplicar fuerzas del tornado a EDIFICIOS y detectar daños ---
+    buildingSlots.applyTornadoForces();
+    buildingSlots.update();
 
-    // Aplicar la componente horizontal en un punto ligeramente por encima del centro
-    // para generar torque natural (rotación) mientras está dentro del tornado.
-    if (horizontal.x !== 0 || horizontal.z !== 0) {
-        const offsetPoint = cubeBody.position.vadd(new CANNON.Vec3(0, 0.8, 0));
-        cubeBody.applyForce(horizontal, offsetPoint);
-    }
-
-    // Además sumar el torque directo al cuerpo (como respaldo), integrado por el motor físico
-    cubeBody.torque.x += tornadoResult.torque.x || 0;
-    cubeBody.torque.y += tornadoResult.torque.y || 0;
-    cubeBody.torque.z += tornadoResult.torque.z || 0;
-
-    // Sincronizamos lo visual con lo físico
-    visualCube.position.copy(cubeBody.position);
-    visualCube.quaternion.copy(cubeBody.quaternion);
-
-    // Actualizar controles y tornado
-    controls.update(delta);
+    // Actualizar tornado
     tornado.update(delta);
 
     renderer.render(scene, camera);
