@@ -1,14 +1,6 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
 
-/**
- * BuildingSlots - Sistema de slots clickeables para colocar edificios
- *
- * Uso:
- * const slots = new BuildingSlots(scene, camera, renderer, modelLoader, physicsWorld);
- * slots.addSlot('slot_1', [10, 0, 0], { intact: './assets/casa_0.glb', cracked: './assets/casa_0_cracked.glb', mass: 0 });
- * slots.addBuilding('casa', { intact: './assets/casa_0.glb', cracked: './assets/casa_0_cracked.glb' });
- */
 export class BuildingSlots {
   constructor(scene, camera, renderer, modelLoader, physicsWorld) {
     this.scene = scene;
@@ -17,16 +9,16 @@ export class BuildingSlots {
     this.modelLoader = modelLoader;
     this.physicsWorld = physicsWorld;
 
-    this.slots = {}; // { slotId: { position, occupied, buildingType } }
-    this.buildings = {}; // { buildingType: { intact, cracked } }
-    this.slotVisuals = {}; // { slotId: { visual, body } }
-    this.buildingVisuals = {}; // { buildingId: { visual, body, type } }
+    this.slots = {};
+    this.buildings = {}; 
+    this.slotVisuals = {}; 
+    this.buildingVisuals = {}; 
 
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
     this.contextMenu = null;
     this.selectedSlot = null;
-    this.tornado = null; // Referencia al tornado
+    this.tornado = null; 
     this.damageThreshold = 30; // Distancia mínima antes de dañar (en unidades)
 
     this.setupEventListeners();
@@ -46,22 +38,11 @@ export class BuildingSlots {
     };
   }
 
-  /**
-   * Establecer referencia del tornado para aplicar fuerzas
-   */
+
   setTornado(tornado) {
     this.tornado = tornado;
   }
 
-  /**
-   * Aplicar fuerzas del tornado a todos los edificios
-   */
-  /**
- * Reemplaza tu método applyTornadoForces actual con este
- */
-/**
-   * Aplicar fuerzas del tornado a todos los edificios (CORREGIDO)
-   */
   applyTornadoForces() {
     if (!this.tornado) return;
 
@@ -75,26 +56,24 @@ export class BuildingSlots {
         const distance = buildingPos.distanceTo(tornadoPos);
 
         if (distance < this.damageThreshold) {
-          // AQUI ESTABA EL ERROR: Usamos realBuildingId en vez de building.slotId
           this.damageBuilding(realBuildingId); 
         }
       }
 
-      // 2. Lógica para mover los escombros (SI ya está dañado)
+      // Mover escombros
       if (building.damaged && building.crackedBodies && building.crackedBodies.length > 0) {
         building.crackedBodies.forEach((debris) => {
           if(!debris.body) return;
           
           const body = debris.body;
 
-          // Calculamos la fuerza basada en la posición exacta DE ESTE PEDAZO
           const debrisPos = new THREE.Vector3(
             body.position.x,
             body.position.y,
             body.position.z
           );
 
-          // Pasamos la masa del cuerpo (que ahora es ligera, ej: 10)
+          // cual es la masa del objeto
           const tornadoResult = this.tornado.calculateForceOnObject(
             debrisPos,
             body.mass 
@@ -110,7 +89,7 @@ export class BuildingSlots {
           body.applyForce(lift, body.position);
           body.applyForce(horizontal, body.position);
 
-          // Torque extra
+          // gira así a lo loco
           body.torque.x += (Math.random() - 0.5) * 10;
           body.torque.y += (Math.random() - 0.5) * 10;
         });
@@ -120,9 +99,9 @@ export class BuildingSlots {
 
   /**
    * Crear un slot para colocar edificios
-   * @param {string} slotId - ID único del slot
-   * @param {array} position - [x, y, z]
-   * @param {object} options - { size: 1, buildingType: null }
+   * @param {string} slotId
+   * @param {array} position
+   * @param {object} options 
    */
   addSlot(slotId, position, options = {}) {
     const size = options.size || 1;
@@ -143,10 +122,6 @@ export class BuildingSlots {
     visual.receiveShadow = true;
     this.scene.add(visual);
 
-    // ⚠️ NO CREAR CUERPO FÍSICO PARA EL SLOT
-    // Los slots son solo marcadores visuales, no necesitan colisiones
-    // Esto evita que bloqueen los modelos cuando spawnean
-
     // Guardar información del slot
     this.slots[slotId] = {
       position: position,
@@ -163,9 +138,6 @@ export class BuildingSlots {
 
   }
 
-  /**
-   * Configurar event listeners
-   */
   setupEventListeners() {
     document.addEventListener(
       "click",
@@ -185,20 +157,14 @@ export class BuildingSlots {
     );
   }
 
-  /**
-   * Manejar click izquierdo
-   */
   onLeftClick(event) {
-    // Actualizar raycaster
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // Obtener todos los visuals de slots
     const slotVisuals = Object.values(this.slotVisuals).map((s) => s.visual);
 
     const intersects = this.raycaster.intersectObjects(slotVisuals, true);
 
     if (intersects.length > 0) {
-      // Encontrar cuál slot fue clickeado
       const clickedVisual = intersects[0].object;
       const slotId = Object.keys(this.slotVisuals).find(
         (id) => this.slotVisuals[id].visual === clickedVisual
@@ -213,9 +179,6 @@ export class BuildingSlots {
     }
   }
 
-  /**
-   * Mostrar menú para seleccionar edificio
-   */
   showBuildingMenu(x, y, slotId) {
     this.closeMenu();
 
@@ -235,7 +198,7 @@ export class BuildingSlots {
             min-width: 180px;
         `;
 
-    // Título del menú
+    // título del menú
     const title = document.createElement("div");
     title.style.cssText = `
             padding: 10px 20px;
@@ -291,7 +254,7 @@ export class BuildingSlots {
       this.contextMenu.appendChild(item);
     });
 
-    // Opción para demoler (si hay algo colocado)
+    // Opción para demoler si hay algo colocado
     if (this.slots[slotId].occupied) {
       const demolish = document.createElement("div");
       demolish.style.cssText = `
@@ -437,18 +400,7 @@ export class BuildingSlots {
 
   }
 
-  /**
-   * Dañar un edificio (cambiar a modelo roto con física)
-   */
-  /**
-   * Dañar un edificio (cambiar a modelo roto con física)
-   */
-  /**
-   * Dañar un edificio (Versión Anti-Explosión)
-   */
-/**
-   * Dañar un edificio (Corrección de Pivotes y Suelo)
-   */
+
   damageBuilding(buildingId) {
     const building = this.buildingVisuals[buildingId];
     if (!building || building.damaged) {
@@ -569,8 +521,6 @@ export class BuildingSlots {
   update() {
     Object.values(this.buildingVisuals).forEach((building) => {
       if (building.damaged && building.crackedBodies) {
-        // Actualizar posición de cada pedazo de escombro de forma COMPLETAMENTE INDEPENDIENTE
-        // Los meshes ya no son hijos del padre, están en la escena raíz
         building.crackedBodies.forEach((part) => {
           if (part.mesh && part.body) {
             // Copiar posición y rotación del cuerpo físico al visual de ESTE pedazo
@@ -579,8 +529,6 @@ export class BuildingSlots {
           }
         });
         
-        // 🔒 NO hacemos nada con el nodo padre (building.visual)
-        // Ya no tiene hijos que mover, así que quedará fijo donde está
       } else if (!building.damaged && building.body) {
         // Si el edificio está intacto, actualizar su posición
         building.visual.position.copy(building.body.position);

@@ -28,8 +28,6 @@ export class Tornado {
     this.particles = [];
 
     for (let i = 0; i < this.particleCount; i++) {
-      // CORRECCIÓN: Volvemos a generar alturas aleatorias. 
-      // El "truco" del crecimiento lo haremos en el update.
       const randomHeight = Math.pow(Math.random(), 1.5) * this.maxHeight;
       
       const particle = {
@@ -102,11 +100,7 @@ export class Tornado {
     
     this.position.addScaledVector(this.velocity, delta);
     
-    // Calcular progreso (0.0 a 1.0)
     const progress = Math.min(this.formationTime / this.formationDuration, 1.0);
-    
-    // NUEVA LÓGICA: El "Techo Actual". El tornado solo puede ser tan alto como este valor.
-    // Si progress es 0.5, el techo está a la mitad de la altura máxima.
     const currentCeiling = this.maxHeight * progress;
 
     const globalChaosFactor = 1 - progress;
@@ -118,13 +112,6 @@ export class Tornado {
       p.chaosFactor = globalChaosFactor;
       p.height += p.upwardSpeed * delta;
 
-      // ---------------------------------------------------------
-      // LÓGICA DE REINICIO MEJORADA
-      // Reiniciamos si supera la altura máxima GLOBAL 
-      // O si supera el "TECHO DE FORMACIÓN" actual.
-      // Esto fuerza a las partículas altas a volver al suelo al inicio,
-      // creando el efecto de que el tornado crece desde abajo.
-      // ---------------------------------------------------------
       if (p.height > this.maxHeight || p.height > currentCeiling) {
         p.height = 0; 
         p.angle = Math.random() * 2 * Math.PI;
@@ -133,7 +120,6 @@ export class Tornado {
         p.radialPhase = Math.random() * Math.PI * 2;
       }
 
-      // Cálculos normales de posición (igual que antes)
       const maxRadiusAtHeight = this.calculateMaxRadius(p.height);
       const oscillation = Math.sin(this.time * 2 + p.radialPhase) * p.radialOscillation;
       const targetRadius = maxRadiusAtHeight * (p.targetRadiusFactor + oscillation * 0.1);
